@@ -36,7 +36,9 @@ steps:
       - '-t'
       - 'gcr.io/$PROJECT_ID/road-rash-frontend'
       - '--build-arg'
-      - 'NEXT_PUBLIC_SOCKET_URL=wss://road-rash-backend-l66h62gohq-uc.a.run.app/ws/game'
+      - 'NEXT_PUBLIC_BACKEND_URL=https://road-rash-backend-836049237338.us-central1.run.app'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SOCKET_URL=wss://road-rash-backend-836049237338.us-central1.run.app'
       - './frontend'
     id: 'build-frontend'
 

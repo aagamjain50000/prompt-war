@@ -38,11 +38,19 @@ export default function GamePage() {
     useEffect(() => {
         if (gameState !== 'playing') return;
 
-        fetch('https://road-rash-backend-836049237338.us-central1.run.app/session/new')
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://road-rash-backend-836049237338.us-central1.run.app';
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'ws://localhost:8000';
+
+        fetch(`${backendUrl}/session/new`)
             .then(res => res.json())
             .then(data => {
                 setSessionId(data.session_id);
-                const socket = new WebSocket(`ws://localhost:8000/ws/${data.session_id}`);
+                const wsProtocol = socketUrl.startsWith('https') ? 'wss' : 'ws';
+                const finalSocketUrl = socketUrl.includes('run.app') 
+                    ? `${socketUrl}/ws/${data.session_id}`
+                    : `${socketUrl.replace('http', 'ws')}/ws/${data.session_id}`;
+                
+                const socket = new WebSocket(finalSocketUrl);
                 
                 socket.onmessage = (event) => {
                     const msg = JSON.parse(event.data);
