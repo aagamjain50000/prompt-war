@@ -2,7 +2,7 @@ steps:
   # --- BACKEND BUILD & DEPLOY ---
   # Build Backend Image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', 'backend/Dockerfile', '-t', 'gcr.io/$PROJECT_ID/road-rash-backend', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/road-rash-backend', './backend']
     id: 'build-backend'
 
   # Push Backend Image
@@ -31,7 +31,7 @@ steps:
   # --- FRONTEND BUILD & DEPLOY ---
   # Build Frontend Image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', 'frontend/Dockerfile', '-t', 'gcr.io/$PROJECT_ID/road-rash-frontend', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/road-rash-frontend', './frontend']
     id: 'build-frontend'
 
   # Push Frontend Image
@@ -52,7 +52,6 @@ steps:
       - '--region'
       - 'us-central1'
       - '--platform'
-      - 'managed'
       - '--allow-unauthenticated'
     id: 'deploy-frontend'
     waitFor: ['push-frontend']
