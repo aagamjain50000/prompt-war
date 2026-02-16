@@ -32,13 +32,31 @@ npm install
 npm run dev
 ```
 
-## Gameplay Controls
-- **WASD / Arrow Keys**: Move bike (lanes).
-- **Space**: Kick / Hit adjacent rider (Logs a memory entry for the NPC).
-- **Proximity**: Getting close to an NPC triggers AI reasoning and dialogue.
+## 🚀 Deployment (Google Cloud)
 
-## Architecture
-- **Frontend**: Next.js + Three.js
-- **Backend**: FastAPI + WebSockets
-- **AI**: Gemini 1.5 Flash
-- **State**: In-memory (JSON-simulated memory)
+### 1. Push to GitHub
+Ensure all changes are pushed to your repository:
+```bash
+git push
+```
+
+### 2. Backend (Cloud Run)
+1. In GCP Console, create a Cloud Run service from your GitHub repo.
+2. Select **Dockerfile** as the build type.
+3. Set **Dockerfile path** to `backend/Dockerfile`.
+4. Add environment variable `GOOGLE_API_KEY`.
+
+### 3. Frontend (Cloud Run)
+1. Create another Cloud Run service.
+2. Set **Dockerfile path** to `frontend/Dockerfile`.
+
+## 🕹️ Controls
+- **WASD / Arrows**: Move bike across 3 lanes.
+- **Space**: **COMBAT STRIKE** - Knock adjacent riders. NPCs will remember your brutality!
+- **V**: **VOICE NEGOTIATION** - Hold 'V' to talk to NPCs.
+- **Q**: **SELF DESTRUCT** - Immediate Game Over.
+
+## 🎨 Technology Stack
+- **Frontend**: Next.js 15, Three.js, React Three Fiber, Tailwind CSS.
+- **Backend**: FastAPI, WebSockets, Python 3.11.
+- **AI**: Gemini 1.5 Flash (Memory & Dialogue).
