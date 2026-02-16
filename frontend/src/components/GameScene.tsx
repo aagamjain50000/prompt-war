@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera, OrbitControls, Stars, Text } from "@react-three/drei";
 import * as THREE from "three";
 
-function Road() {
+function Road({ speed = 0 }: { speed?: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
   useFrame((state, delta) => {
     if (meshRef.current) {
-      meshRef.current.position.z += 20 * delta;
+      // Scale scroll speed by player velocity
+      const scrollSpeed = (speed / 10) + 15;
+      meshRef.current.position.z += scrollSpeed * delta;
       if (meshRef.current.position.z > 50) {
         meshRef.current.position.z = -50;
       }
@@ -237,26 +239,45 @@ function Bike({
   );
 }
 
+function SceneController({ shakeIntensity = 0 }: { shakeIntensity?: number }) {
+  const { camera } = useThree();
+
+  useFrame(() => {
+    if (shakeIntensity > 0) {
+      camera.position.x = (Math.random() - 0.5) * shakeIntensity * 0.2;
+      camera.position.y = 3 + (Math.random() - 0.5) * shakeIntensity * 0.2;
+    } else {
+      camera.position.x = 0;
+      camera.position.y = 3;
+    }
+  });
+
+  return null;
+}
+
 export default function GameScene({ 
     playerPos, 
     npcs,
     speed = 0,
+    shakeIntensity = 0,
     isPlayerHitting = false
 }: { 
     playerPos: number, 
     npcs: any[],
     speed?: number,
+    shakeIntensity?: number,
     isPlayerHitting?: boolean
 }) {
   return (
     <div className="w-full h-screen bg-black">
       <Canvas>
         <PerspectiveCamera makeDefault position={[0, 3, 7]} />
+        <SceneController shakeIntensity={shakeIntensity} />
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} />
-        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={speed/100} />
         
-        <Road />
+        <Road speed={speed} />
         
         {/* Player Bike */}
         <Bike position={[playerPos, 0, 0]} color="cyan" isPlayer type="player" speed={speed} hit={isPlayerHitting} />
@@ -264,16 +285,18 @@ export default function GameScene({
         {/* NPC Bikes */}
         {npcs.map((npc) => {
             let type = 'civilian';
-            if (npc.name.includes('COP')) type = 'police';
-            else if (npc.name.includes('AXEL')) type = 'aggressive';
+            if (npc.aggression === 'police') type = 'police';
+            else if (npc.aggression === 'aggressive') type = 'aggressive';
             
+            // NPCs move relative to player. We draw them based on their relative Z.
+            // If NPC Z is very negative, they are behind. If positive, they are ahead.
             return (
-                <group key={npc.id} position={[npc.lane, 0, npc.z]}>
-                    <Bike position={[0, 0, 0]} targetLane={npc.target_lane} color={npc.color} type={type} />
+                <group key={npc.id} position={[npc.lane, 0, -npc.z]}>
+                    <Bike position={[0, 0, 0]} targetLane={npc.target_lane} color={npc.color} type={type} speed={npc.speed} />
                     <Text
                         position={[0, 1.5, 0]}
                         fontSize={0.3}
-                        color={npc.aggression === 'aggressive' || type === 'aggressive' ? '#ff003c' : (type === 'police' ? '#0088ff' : '#00f3ff')}
+                        color={type === 'aggressive' ? '#ff003c' : (type === 'police' ? '#0088ff' : '#00f3ff')}
                         anchorX="center"
                     >
                         {npc.name}

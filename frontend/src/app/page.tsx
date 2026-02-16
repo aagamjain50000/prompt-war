@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import GameScene from '@/components/GameScene';
 import { MessageSquare, Shield, Zap, Flame } from 'lucide-react';
+import * as THREE from 'three';
 
 export default function GamePage() {
     const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameover'>('menu');
@@ -13,23 +14,31 @@ export default function GamePage() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isListening, setIsListening] = useState(false);
     
-    // UI states
+    // Physics and Race States
     const [isShaking, setIsShaking] = useState(false);
-    const [fakeSpeed, setFakeSpeed] = useState(0);
+    const [shakeIntensity, setShakeIntensity] = useState(0);
+    const [hitStop, setHitStop] = useState(false);
+    const [velocity, setVelocity] = useState(0); // Current speed in KPH
+    const [distance, setDistance] = useState(0); 
+    const [isFinished, setIsFinished] = useState(false);
     const [events, setEvents] = useState<{id: string, text: string, type: 'info' | 'warn'}[]>([]);
+    const [isAccelerating, setIsAccelerating] = useState(false);
+    const [isBraking, setIsBraking] = useState(false);
 
-    // Dynamic NPCs for the scene
+    const RACE_LIMIT = 3000;
+
+    // Initial NPCs with relative Z positions and identities
     const [npcs, setNpcs] = useState([
-        { id: 'rider_1', name: 'AXEL-7', lane: -2.0, z: -20, color: 'orange', target_lane: -2.0, aggression: 'neutral' },
-        { id: 'rider_2', name: 'TASHA-V', lane: 2.0, z: -40, color: 'purple', target_lane: 2.0, aggression: 'neutral' },
-        { id: 'rider_3', name: 'MILLER-COP', lane: 0.0, z: -60, color: 'blue', target_lane: 0.0, aggression: 'neutral' },
+        { id: 'rider_1', name: 'AXEL-7', lane: -2.0, z: 15, color: '#ff4400', target_lane: -2, speed: 135, aggression: 'aggressive', distance: 15 },
+        { id: 'rider_2', name: 'TASHA-V', lane: 2.0, z: 25, color: '#8800ff', target_lane: 2, speed: 142, aggression: 'neutral', distance: 25 },
+        { id: 'rider_3', name: 'MILLER-COP', lane: 0.0, z: 40, color: '#0066ff', target_lane: 0, speed: 150, aggression: 'police', distance: 40 },
+        { id: 'rider_4', name: 'GANG-01', lane: -4.0, z: 60, color: '#555', target_lane: -4, speed: 130, aggression: 'neutral', distance: 60 },
     ]);
 
     useEffect(() => {
         if (gameState !== 'playing') return;
 
-        // Step 1: Initialize Session
-        fetch('http://localhost:8000/session/new')
+        fetch('https://road-rash-backend-836049237338.us-central1.run.app/session/new')
             .then(res => res.json())
             .then(data => {
                 setSessionId(data.session_id);
@@ -50,60 +59,149 @@ export default function GamePage() {
                         setTimeout(() => setEvents(prev => prev.filter(e => e.id !== newEvent.id)), 4000);
                     }
                 };
-                
                 setWs(socket);
             });
 
-        // Step 2: Controls
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'a' || e.key === 'ArrowLeft') setPlayerLane(prev => Math.max(prev - 0.5, -4));
             if (e.key === 'd' || e.key === 'ArrowRight') setPlayerLane(prev => Math.min(prev + 0.5, 4));
+            if (e.key === 'w' || e.key === 'ArrowUp') setIsAccelerating(true);
+            if (e.key === 's' || e.key === 'ArrowDown') setIsBraking(true);
             if (e.key === 'v') startVoiceInput(); 
             if (e.key === ' ') {
-                if (ws && sessionId) {
-                    setIsShaking(true);
-                    setTimeout(() => setIsShaking(false), 200);
-                    ws.send(JSON.stringify({
-                        type: 'combat_event',
-                        npc_id: 'rider_1',
-                        action: 'hit',
-                        success: true
-                    }));
+                if (ws && ws.readyState === WebSocket.OPEN && sessionId) {
+                    // Trigger Combat Feedback
+                    setHitStop(true);
+                    setShakeIntensity(2.0);
+                    setTimeout(() => setHitStop(false), 80); // Hit-stop duration
+                    setTimeout(() => setShakeIntensity(0), 300); // Shake duration
+                    
+                    setNpcs(prev => prev.map(n => 
+                        n.id === 'rider_1' ? { ...n, speed: n.speed + 20, target_lane: playerLane } : n
+                    ));
+                    
+                    ws.send(JSON.stringify({ type: 'combat_event', npc_id: 'rider_1', action: 'hit', success: true }));
                     setReputation(prev => ({...prev, brutality: Math.min(1, prev.brutality + 0.05)}));
                 }
             }
             if (e.key === 'q') setGameState('gameover');
         };
 
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.key === 'w' || e.key === 'ArrowUp') setIsAccelerating(false);
+            if (e.key === 's' || e.key === 'ArrowDown') setIsBraking(false);
+        };
+
         const startVoiceInput = () => {
             const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
             if (!SpeechRecognition) return;
-            
             const recognition = new SpeechRecognition();
             recognition.onstart = () => setIsListening(true);
             recognition.onresult = (event: any) => {
                 const transcript = event.results[0][0].transcript;
-                if (ws) ws.send(JSON.stringify({ type: 'voice_input', text: transcript }));
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'voice_input', text: transcript }));
+                }
             };
             recognition.onend = () => setIsListening(false);
             recognition.start();
         };
 
         window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
     }, [ws, sessionId, gameState]);
 
-    // Speed simulation logic
+    // Game Loop: Speed and NPC Movement
     useEffect(() => {
-        if (gameState !== 'playing') {
-            setFakeSpeed(0);
-            return;
-        }
+        if (gameState !== 'playing' || isFinished) return;
+
+        let lastTime = Date.now();
         const interval = setInterval(() => {
-            setFakeSpeed(s => 140 + Math.sin(Date.now() / 1000) * 10);
-        }, 100);
+            if (hitStop) return; // Time stop effect
+
+            const now = Date.now();
+            const delta = (now - lastTime) / 1000;
+            lastTime = now;
+
+            // Player Physics
+            setVelocity(v => {
+                let nextV = v;
+                if (isAccelerating) nextV += 45 * delta; // Accel
+                else if (isBraking) nextV -= 120 * delta; // Hard brake
+                else nextV -= 20 * delta; // Natural drag
+
+                return Math.max(0, Math.min(240, nextV));
+            });
+
+            // Update NPC positions based on relative speed
+            setNpcs(prev => {
+                const newNpcs = prev.map(npc => {
+                    // Constant forward motion for NPC
+                    const npcMovement = npc.speed * 0.05 * delta * 15;
+                    const newTotalDist = npc.distance + npcMovement;
+
+                    // Relative Z for rendering
+                    const relativeZ = npc.z + (npc.speed - velocity) * 0.05 * delta * 15;
+                    
+                    // Weaving/Drift
+                    const driftSpeed = npc.aggression === 'aggressive' ? 2 : 0.5;
+                    const drift = Math.sin(now / 1000 + npc.id.length) * 0.02 * driftSpeed;
+                    
+                    // Lane Following
+                    let currentLane = npc.lane;
+                    const laneTarget = npc.target_lane || 0;
+                    currentLane = THREE.MathUtils.lerp(currentLane, laneTarget, 2 * delta);
+
+                    // Overtaking AI
+                    let nextTargetLane = npc.target_lane;
+                    if (Math.abs(npc.z) < 8 && npc.z < 0 && Math.abs(npc.lane - playerLane) < 1.0) {
+                        nextTargetLane = playerLane > 0 ? npc.lane - 2 : npc.lane + 2;
+                        nextTargetLane = Math.max(-4, Math.min(4, nextTargetLane));
+                    }
+
+                    return {
+                        ...npc,
+                        lane: currentLane + drift,
+                        z: relativeZ,
+                        distance: newTotalDist,
+                        target_lane: nextTargetLane
+                    };
+                });
+
+                // Collision Detection
+                newNpcs.forEach(npc => {
+                    const dist = Math.sqrt(Math.pow(npc.lane - playerLane, 2) + Math.pow(npc.z, 2));
+                    if (dist < 1.5) {
+                        setShakeIntensity(1.5);
+                        setTimeout(() => setShakeIntensity(0), 200);
+                        setVelocity(v => Math.max(0, v - 120 * delta));
+                        const pushDir = playerLane > npc.lane ? 0.4 : -0.4;
+                        setPlayerLane(p => Math.max(-4, Math.min(4, p + pushDir)));
+                        
+                        // NPC boosts away after hitting player
+                        npc.speed += 5;
+                    }
+                });
+
+                return newNpcs;
+            });
+
+            setDistance(d => {
+                const nextD = d + velocity * 0.05 * delta * 15;
+                if (nextD >= RACE_LIMIT) {
+                    setIsFinished(true);
+                    setVelocity(0);
+                }
+                return nextD;
+            });
+        }, 16);
+
         return () => clearInterval(interval);
-    }, [gameState]);
+    }, [gameState, isAccelerating, isBraking, velocity, hitStop, isFinished, playerLane]);
 
     // Proximity logic
     useEffect(() => {
@@ -111,7 +209,8 @@ export default function GamePage() {
         const interval = setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 npcs.forEach(npc => {
-                    if (Math.abs(playerLane - npc.lane) < 1.0) {
+                    // Alert if within interaction range (Z-axis is now relative)
+                    if (Math.abs(playerLane - npc.lane) < 1.0 && Math.abs(npc.z) < 5) {
                         ws.send(JSON.stringify({ type: 'proximity_alert', npc_id: npc.id }));
                     }
                 });
@@ -126,8 +225,9 @@ export default function GamePage() {
             <GameScene 
                 playerPos={playerLane} 
                 npcs={npcs} 
-                speed={fakeSpeed} 
-                isPlayerHitting={isShaking} 
+                speed={velocity} 
+                shakeIntensity={shakeIntensity}
+                isPlayerHitting={hitStop} 
             />
 
             {/* START MENU */}
@@ -180,7 +280,7 @@ export default function GamePage() {
             {gameState === 'playing' && (
                 <>
                     {/* Speed Lines Overlay */}
-                    {fakeSpeed > 145 && (
+                    {velocity > 145 && (
                         <div className="absolute inset-0 pointer-events-none opacity-40">
                             {[...Array(20)].map((_, i) => (
                                 <div 
@@ -198,14 +298,84 @@ export default function GamePage() {
                         </div>
                     )}
 
-                    {/* TOP HUD: Event Banners */}
+                    {/* TOP HUD: Event Banners & Progress */}
                     <div className="absolute top-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 w-full max-w-lg pointer-events-none">
                         {events.map((event) => (
                             <div key={event.id} className={`glass-panel px-6 py-2 border-l-4 ${event.type === 'warn' ? 'border-red-500 text-red-500' : 'border-cyan-500 text-cyan-400'} animate-in slide-in-from-top-4 font-audiowide uppercase tracking-wider text-sm`}>
                                 {event.text}
                             </div>
                         ))}
+
+                        {/* Finish Warning */}
+                        {distance > RACE_LIMIT - 500 && !isFinished && (
+                            <div className="bg-red-600 text-white font-orbitron font-black italic px-8 py-2 skew-x-[-20deg] animate-pulse shadow-[0_0_30px_#ff0000]">
+                                <span className="inline-block skew-x-[20deg]">LAST STRETCH • FINISH LINE AHEAD</span>
+                            </div>
+                        )}
+                        
+                        <div className="mt-4 glass-panel px-4 py-1 flex items-center gap-3">
+                            <div className="text-[10px] text-white/40 font-audiowide uppercase tracking-[0.3em]">Track Progress</div>
+                            <div className="w-64 h-1 bg-white/10 rounded-full overflow-hidden">
+                                <div className="h-full bg-cyan-500 shadow-[0_0_10px_#00f3ff] transition-all duration-300" style={{ width: `${(distance / RACE_LIMIT) * 100}%` }} />
+                            </div>
+                            <div className="text-[10px] text-cyan-500 font-mono">{Math.floor(distance)}m / {RACE_LIMIT}m</div>
+                        </div>
                     </div>
+
+                    {/* LIVE SCOREBOARD */}
+                    <div className="absolute top-10 right-10 flex flex-col gap-2 pointer-events-none w-48">
+                        <div className="text-[10px] font-audiowide text-white/40 tracking-widest uppercase mb-1">Live Standings</div>
+                        {[
+                            { name: 'YOU', dist: distance, isPlayer: true },
+                            ...npcs.map(n => ({ name: n.name, dist: n.distance, isPlayer: false }))
+                        ]
+                        .sort((a, b) => b.dist - a.dist)
+                        .map((racer, idx) => (
+                            <div key={racer.name} className={`glass-panel px-3 py-1 flex justify-between items-center border-l-2 transition-all duration-300 ${racer.isPlayer ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/10'}`}>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-mono text-white/50">{idx + 1}</span>
+                                    <span className={`text-[10px] font-audiowide ${racer.isPlayer ? 'text-cyan-400' : 'text-white/80'}`}>{racer.name}</span>
+                                </div>
+                                <span className="text-[8px] font-mono text-white/30">{Math.floor(RACE_LIMIT - racer.dist)}m</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* RACE FINISH OVERLAY */}
+                    {isFinished && (
+                        <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md animate-in fade-in duration-1000">
+                             <div className="text-xs font-audiowide text-cyan-500 tracking-[1em] mb-4 animate-bounce">RACE COMPLETE</div>
+                             <h2 className="text-8xl font-orbitron font-black italic text-white drop-shadow-[0_0_30px_#00f3ff] mb-8">
+                                 {(() => {
+                                     const sorted = [{ name: 'YOU', dist: distance }, ...npcs.map(n => ({ name: n.name, dist: n.distance }))].sort((a,b) => b.dist - a.dist);
+                                     const rank = sorted.findIndex(r => r.name === 'YOU') + 1;
+                                     const suffix = rank === 1 ? 'ST' : rank === 2 ? 'ND' : rank === 3 ? 'RD' : 'TH';
+                                     return `${rank}${suffix} PLACE`;
+                                 })()}
+                             </h2>
+                             
+                             <div className="glass-panel p-8 neon-border-cyan flex flex-col items-center gap-6 max-w-md w-full">
+                                <div className="text-cyan-500 font-audiowide tracking-widest uppercase text-sm border-b border-cyan-500/30 pb-2 w-full text-center">Final Results</div>
+                                <div className="w-full space-y-4">
+                                    {[{ name: 'YOU', dist: distance, isPlayer: true }, ...npcs.map(n => ({ name: n.name, dist: n.distance, isPlayer: false }))]
+                                      .sort((a,b) => b.dist - a.dist)
+                                      .map((r, i) => (
+                                        <div key={r.name} className="flex justify-between items-center">
+                                            <span className={`font-audiowide text-sm ${r.isPlayer ? 'text-cyan-400' : 'text-white/60'}`}>{i+1}. {r.name}</span>
+                                            <span className="font-mono text-xs text-white/40">{Math.floor(r.dist)}m traveled</span>
+                                        </div>
+                                      ))
+                                    }
+                                </div>
+                                <button 
+                                    onClick={() => window.location.reload()}
+                                    className="mt-6 bg-cyan-400 text-black font-audiowide px-8 py-3 rounded-full hover:bg-cyan-300 transition-all hover:scale-110"
+                                >
+                                    RACE AGAIN
+                                </button>
+                             </div>
+                        </div>
+                    )}
 
                     {/* SIDE HUD: Reputation & Stats */}
                     <div className="absolute top-10 left-10 flex flex-col gap-6 pointer-events-none w-64">
@@ -253,12 +423,12 @@ export default function GamePage() {
                             <div className="text-[10px] text-cyan-500 font-audiowide uppercase tracking-[0.2em] mb-1">Velocity</div>
                             <div className="flex items-baseline gap-1">
                                 <span className="text-6xl font-orbitron font-black italic tracking-tighter text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
-                                    {Math.floor(fakeSpeed)}
+                                    {Math.floor(velocity)}
                                 </span>
                                 <span className="text-xs text-cyan-500 font-audiowide">KPH</span>
                             </div>
                             <div className="w-full h-1 bg-cyan-900/40 mt-3 relative overflow-hidden">
-                                <div className="absolute inset-0 bg-cyan-500 shadow-[0_0_15px_#00f3ff]" style={{ width: `${(fakeSpeed / 200) * 100}%` }} />
+                                <div className="absolute inset-0 bg-cyan-500 shadow-[0_0_15px_#00f3ff]" style={{ width: `${(velocity / 200) * 100}%` }} />
                             </div>
                         </div>
                     </div>
