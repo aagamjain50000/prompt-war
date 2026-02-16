@@ -31,7 +31,13 @@ steps:
   # --- FRONTEND BUILD & DEPLOY ---
   # Build Frontend Image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/road-rash-frontend', './frontend']
+    args: 
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/road-rash-frontend'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SOCKET_URL=wss://road-rash-backend-l66h62gohq-uc.a.run.app/ws/game'
+      - './frontend'
     id: 'build-frontend'
 
   # Push Frontend Image

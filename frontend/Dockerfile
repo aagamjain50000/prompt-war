@@ -1,6 +1,10 @@
 # Build stage
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+ARG NEXT_PUBLIC_SOCKET_URL
+ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
+
 COPY package*.json ./
 RUN npm install
 COPY . .
